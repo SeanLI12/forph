@@ -218,7 +218,7 @@
 <body>
   <h1>🏆 Tournament Calendar Explorer</h1>
   <p class="description">
-    Find tournaments and competitions active on a selected date. (Dates in Taiwan Time)
+    Directly fetching tournament calendar data from the Perform Feeds API. (Dates in Taiwan Time)
   </p>
 
   <div class="controls">
@@ -239,7 +239,7 @@
           📅 Running on this date
         </label>
 
-        <button id="fetchBtn" class="primary" style="margin-left: 0.5rem;">🔄 Reload Data</button>
+        <button id="fetchBtn" class="primary" style="margin-left: 0.5rem;">🔄 Fetch Data</button>
       </div>
 
       <div id="loading" class="hidden" style="color: #64748b; font-style: italic; padding-bottom: 0.5rem;">Loading...
@@ -250,10 +250,9 @@
   <div id="status" class="status-bar"></div>
   <div id="results" class="grid"></div>
 
-  <!-- Load Data Variable -->
-  <script src="api_data.js"></script>
-
   <script>
+    const API_URL = 'https://api.performfeeds.com/soccerdata/tournamentcalendar/1vmmaetzoxkgg1qf6pkpfmku0k?_fmt=json&_rt=b';
+
     // UI Elements
     const fetchBtn = document.getElementById('fetchBtn');
     const resultsEl = document.getElementById('results');
@@ -276,25 +275,31 @@
     initDatePicker();
 
     // Event Listeners
-    fetchBtn.addEventListener('click', loadData);
+    fetchBtn.addEventListener('click', fetchData);
     [onlyActiveCheckbox, runningOnDateCheckbox, filterDateInput].forEach(el => {
       el.addEventListener('change', () => {
         if (rawData) render(rawData);
       });
     });
 
-    function loadData() {
+    async function fetchData() {
       setLoading(true);
       setStatus('');
       resultsEl.innerHTML = '';
 
-      if (window.TOURNAMENT_DATA) {
-        rawData = window.TOURNAMENT_DATA;
-        render(rawData);
-        setStatus(`Successfully loaded ${rawData.competition?.length || 0} competitions.`, 'success');
-        setLoading(false);
-      } else {
-        setStatus(`Failed to find data. Make sure <code>api_data.js</code> is valid.`, 'error');
+      try {
+        const response = await fetch(API_URL);
+        if (!response.ok) {
+          throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+        rawData = data;
+        render(data);
+        setStatus(`Successfully fetched ${data.competition?.length || 0} competitions from API.`, 'success');
+      } catch (error) {
+        console.error(error);
+        setStatus(`Failed to fetch data: ${error.message}. <br>If you are testing locally, ensure you have resolved CORS issues or use a proxy.`, 'error');
+      } finally {
         setLoading(false);
       }
     }
@@ -453,7 +458,7 @@
       }
     }
 
-    loadData();
+    fetchData();
   </script>
 </body>
 
