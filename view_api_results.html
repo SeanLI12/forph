@@ -29,7 +29,7 @@
 
     .controls {
       margin-bottom: 2rem;
-      padding: 1rem;
+      padding: 1.25rem;
       background: #fff;
       border-radius: 8px;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -38,7 +38,6 @@
       gap: 1rem;
     }
 
-    /* Sub-controls inside the panel */
     .control-row {
       display: flex;
       flex-wrap: wrap;
@@ -58,8 +57,8 @@
       color: #475569;
     }
 
-    input[type="datetime-local"] {
-      padding: 0.6rem;
+    input[type="date"] {
+      padding: 0.5rem;
       border: 1px solid #cbd5e1;
       border-radius: 6px;
       font-size: 1rem;
@@ -116,7 +115,6 @@
       color: #15803d;
     }
 
-    /* Grid for Competitions */
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
@@ -131,7 +129,6 @@
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
       display: flex;
       flex-direction: column;
-      transition: transform 0.1s ease-in-out;
     }
 
     .card-header {
@@ -173,9 +170,10 @@
       border-left-color: #3b82f6;
     }
 
-    .tournament-item.active .t-name {
-      font-weight: 700;
-      color: #1e40af;
+    .tournament-item.in-range {
+      background: #fffbeb;
+      border-left-color: #f59e0b;
+      border-width: 4px;
     }
 
     .t-dates {
@@ -205,6 +203,12 @@
       color: #94a3b8;
     }
 
+    .badge.match {
+      background: #fef3c7;
+      color: #92400e;
+      margin-left: 0.5rem;
+    }
+
     .hidden {
       display: none;
     }
@@ -214,29 +218,30 @@
 <body>
   <h1>🏆 Tournament Calendar Explorer</h1>
   <p class="description">
-    Visualizing tournament calendar data from <code>api_results.json</code>.
+    Find tournaments and competitions active on a selected date. (Dates in Taiwan Time)
   </p>
 
   <div class="controls">
     <div class="control-row">
       <div class="input-group">
-        <label for="refDateInput">Reference Time (Taiwan Time)</label>
-        <input type="datetime-local" id="refDateInput" />
+        <label for="filterDate">Filter by Date (Taiwan Time)</label>
+        <input type="date" id="filterDate" />
       </div>
 
-      <div style="padding-bottom: 0.4rem; display: flex; gap: 1.5rem;">
-        <label class="checkbox-label" title="Show tournaments starting within 24h from Reference Time">
-          <input type="checkbox" id="next24h">
-          🕒 Starts within 24h
-        </label>
-
+      <div style="padding-bottom: 0.4rem; display: flex; gap: 1.25rem; align-items: center;">
         <label class="checkbox-label">
           <input type="checkbox" id="onlyActive" checked>
           ✅ Show only active
         </label>
+
+        <label class="checkbox-label" title="Only show tournaments that are running on the selected date">
+          <input type="checkbox" id="runningOnDate">
+          📅 Running on this date
+        </label>
+
+        <button id="fetchBtn" class="primary" style="margin-left: 0.5rem;">🔄 Reload Data</button>
       </div>
 
-      <button id="fetchBtn" class="primary">🔄 Reload Data</button>
       <div id="loading" class="hidden" style="color: #64748b; font-style: italic; padding-bottom: 0.5rem;">Loading...
       </div>
     </div>
@@ -254,28 +259,25 @@
     const resultsEl = document.getElementById('results');
     const statusEl = document.getElementById('status');
     const loadingEl = document.getElementById('loading');
-    const refDateInput = document.getElementById('refDateInput');
+    const filterDateInput = document.getElementById('filterDate');
     const onlyActiveCheckbox = document.getElementById('onlyActive');
-    const next24hCheckbox = document.getElementById('next24h');
+    const runningOnDateCheckbox = document.getElementById('runningOnDate');
 
     let rawData = null;
 
-    // Helper: Pad numbers
-    const pad = n => n.toString().padStart(2, '0');
-
-    // Initialize Reference Date to Local Time
-    function initDate() {
+    // Initialize date picker to today (Taiwan Time)
+    function initDatePicker() {
       const now = new Date();
-      const localIso = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
-      refDateInput.value = localIso;
+      // Taiwan offset is UTC+8
+      const twTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+      const todayStr = twTime.toISOString().split('T')[0];
+      filterDateInput.value = todayStr;
     }
-    initDate();
+    initDatePicker();
 
     // Event Listeners
     fetchBtn.addEventListener('click', loadData);
-
-    // Auto-update render on any filter change
-    [onlyActiveCheckbox, next24hCheckbox, refDateInput].forEach(el => {
+    [onlyActiveCheckbox, runningOnDateCheckbox, filterDateInput].forEach(el => {
       el.addEventListener('change', () => {
         if (rawData) render(rawData);
       });
@@ -286,14 +288,13 @@
       setStatus('');
       resultsEl.innerHTML = '';
 
-      // Use data loaded from script tag
       if (window.TOURNAMENT_DATA) {
         rawData = window.TOURNAMENT_DATA;
         render(rawData);
-        setStatus(`Successfully loaded ${rawData.competition?.length || 0} competitions from local <code>api_data.js</code>.`, 'success');
+        setStatus(`Successfully loaded ${rawData.competition?.length || 0} competitions.`, 'success');
         setLoading(false);
       } else {
-        setStatus(`Failed to find data. <br>Ensure <code>api_data.js</code> exists and is loaded successfully.`, 'error');
+        setStatus(`Failed to find data. Make sure <code>api_data.js</code> is valid.`, 'error');
         setLoading(false);
       }
     }
@@ -301,12 +302,12 @@
     function render(data) {
       resultsEl.innerHTML = '';
       const competitions = data.competition || [];
-
       const showOnlyActive = onlyActiveCheckbox.checked;
-      const showNext24h = next24hCheckbox.checked;
+      const filterOnDate = runningOnDateCheckbox.checked;
 
-      const refDateVal = new Date(refDateInput.value);
-      const windowEnd = new Date(refDateVal.getTime() + 24 * 60 * 60 * 1000);
+      // Selected date as UTC midnight for comparison
+      const selectedDateStr = filterDateInput.value;
+      const selectedTs = selectedDateStr ? new Date(selectedDateStr + 'T00:00:00Z').getTime() : null;
 
       if (competitions.length === 0) {
         resultsEl.innerHTML = '<p>No competitions found.</p>';
@@ -318,25 +319,25 @@
       competitions.forEach((comp) => {
         const calendar = comp.tournamentCalendar || [];
 
+        // Filter Logic
         let filteredCalendar = calendar.filter(t => {
+          // 1. Active status filter
           if (showOnlyActive && String(t.active).toLowerCase() !== 'yes') return false;
 
-          if (showNext24h) {
-            const startDateStr = t.startDate;
-            if (!startDateStr) return false;
+          // 2. Date range filter
+          if (filterOnDate && selectedTs) {
+            const startTs = parseToTs(t.startDate);
+            const endTs = parseToTs(t.endDate);
 
-            let start = new Date(startDateStr);
-            if (isNaN(start.getTime())) {
-              if (/^\d{4}-\d{2}-\d{2}$/.test(startDateStr)) {
-                start = new Date(`${startDateStr}T00:00:00Z`);
-              } else {
-                return false;
-              }
+            if (!startTs) return false;
+
+            // If selected date is between start and end
+            if (selectedTs >= startTs && (!endTs || selectedTs <= endTs)) {
+              return true;
             }
-
-            if (start >= refDateVal && start <= windowEnd) return true;
             return false;
           }
+
           return true;
         });
 
@@ -345,9 +346,8 @@
         const card = document.createElement('div');
         card.className = 'card';
 
+        // Sort: Active first, then by date
         filteredCalendar.sort((a, b) => {
-          if (showNext24h) return (a.startDate || '').localeCompare(b.startDate || '');
-
           const aActive = String(a.active).toLowerCase() === 'yes';
           const bActive = String(b.active).toLowerCase() === 'yes';
           if (aActive !== bActive) return bActive ? 1 : -1;
@@ -357,13 +357,22 @@
         const listHtml = filteredCalendar.map(t => {
           const isActive = String(t.active).toLowerCase() === 'yes';
           const statusClass = isActive ? 'active' : 'inactive';
-          const itemClass = isActive ? 'tournament-item active' : 'tournament-item';
+
+          // Check if this specific item matches the date range (for highlighting)
+          const startTs = parseToTs(t.startDate);
+          const endTs = parseToTs(t.endDate);
+          const isMatchingDate = selectedTs && startTs && (selectedTs >= startTs && (!endTs || selectedTs <= endTs));
+
+          const itemClass = `tournament-item ${isActive ? 'active' : ''} ${isMatchingDate ? 'in-range' : ''}`;
 
           return `
             <li class="${itemClass}">
               <span class="badge ${statusClass}">${isActive ? 'ACTIVE' : 'INACTIVE'}</span>
+              ${isMatchingDate ? '<span class="badge match">📅 RUNNING</span>' : ''}
               <div class="t-name">${t.name}</div>
-              <span class="t-dates">${formatDate(t.startDate)} - ${formatDate(t.endDate)}</span>
+              <span class="t-dates">
+                ${formatDate(t.startDate)} - ${t.endDate ? formatDate(t.endDate) : '???'}
+              </span>
               <div style="font-size: 0.75rem; color: #94a3b8; margin-top:2px;">ID: ${t.id}</div>
             </li>
           `;
@@ -384,13 +393,47 @@
       });
 
       if (visibleCount === 0) {
-        resultsEl.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #64748b; padding: 2rem;"><h3>No tournaments match your filters.</h3><p>Try unchecking "Start in next 24h" or adjusting the Reference Time.</p></div>';
+        resultsEl.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #64748b; padding: 2rem;"><h3>No tournaments match your filters.</h3></div>';
       }
+    }
+
+    function parseToTs(isoStr) {
+      if (!isoStr) return null;
+      let d = new Date(isoStr);
+      if (isNaN(d.getTime())) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(isoStr)) {
+          d = new Date(`${isoStr}T00:00:00Z`);
+        } else {
+          return null;
+        }
+      }
+      return d.getTime();
     }
 
     function formatDate(isoStr) {
       if (!isoStr) return '???';
-      return isoStr.split('T')[0].replace('Z', '');
+      let date = new Date(isoStr);
+      if (isNaN(date.getTime())) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(isoStr)) {
+          date = new Date(`${isoStr}T00:00:00Z`);
+        } else {
+          return isoStr;
+        }
+      }
+
+      try {
+        return new Intl.DateTimeFormat('zh-TW', {
+          timeZone: 'Asia/Taipei',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        }).format(date);
+      } catch (e) {
+        return isoStr.replace('T', ' ').replace('Z', '');
+      }
     }
 
     function setStatus(msg, type = 'normal') {
@@ -410,7 +453,6 @@
       }
     }
 
-    // Initial fetch
     loadData();
   </script>
 </body>
