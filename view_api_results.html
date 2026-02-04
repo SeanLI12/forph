@@ -195,16 +195,21 @@
     <button id="fetchBtn" class="primary">🔄 Fetch Data</button>
     <div id="loading" class="hidden" style="color: #64748b; font-style: italic;">Loading...</div>
 
-    <label style="margin-left: auto; display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
-      <input type="checkbox" id="onlyActive" checked> Show only active tournaments
-    </label>
+    <div style="margin-left: auto; display: flex; flex-direction: column; gap: 0.25rem;">
+      <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; cursor: pointer;">
+        <input type="checkbox" id="useProxy"> 🛡️ Use CORS Proxy (Fixes browser errors)
+      </label>
+      <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; cursor: pointer;">
+        <input type="checkbox" id="onlyActive" checked> Show only active tournaments
+      </label>
+    </div>
   </div>
 
   <div id="status" class="status-bar"></div>
   <div id="results" class="grid"></div>
 
   <script>
-    const DEFAULT_TOKEN = 'dededee';
+    const DEFAULT_TOKEN = '1vmmaetzoxkgg1qf6pkpfmku0k';
 
     const tokenInput = document.getElementById('tokenInput');
     const fetchBtn = document.getElementById('fetchBtn');
@@ -212,6 +217,7 @@
     const statusEl = document.getElementById('status');
     const loadingEl = document.getElementById('loading');
     const onlyActiveCheckbox = document.getElementById('onlyActive');
+    const useProxyCheckbox = document.getElementById('useProxy');
 
     let rawData = null;
 
@@ -219,6 +225,11 @@
     const urlParams = new URLSearchParams(window.location.search);
     const tokenFromUrl = urlParams.get('token');
     tokenInput.value = tokenFromUrl || DEFAULT_TOKEN;
+
+    // Check proxy by default if on GitHub Pages or file protocol to be safe, 
+    // but let's default to false to be explicit unless user toggles it, 
+    // or maybe default true if we detect simple browser environment? 
+    // Let's stick to manual toggle for clarity, but maybe suggest it on error.
 
     fetchBtn.addEventListener('click', fetchData);
     onlyActiveCheckbox.addEventListener('change', () => {
@@ -237,24 +248,39 @@
         return;
       }
 
-      const API_URL = `https://api.performfeeds.com/soccerdata/tournamentcalendar/${token}?_fmt=json&_rt=b`;
+      let apiUrl = `https://api.performfeeds.com/soccerdata/tournamentcalendar/${token}?_fmt=json&_rt=b`;
+
+      if (useProxyCheckbox.checked) {
+        // Using corsproxy.io as a public proxy service
+        apiUrl = `https://corsproxy.io/?` + encodeURIComponent(apiUrl);
+      }
 
       setLoading(true);
       setStatus('');
       resultsEl.innerHTML = '';
 
       try {
-        const response = await fetch(API_URL);
+        const response = await fetch(apiUrl);
         if (!response.ok) {
           throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
         }
         const data = await response.json();
         rawData = data;
         render(data);
-        setStatus(`Successfully loaded ${data.competition?.length || 0} competitions using token: ${token.substring(0, 4)}...`, 'success');
+
+        let successMsg = `Successfully loaded ${data.competition?.length || 0} competitions.`;
+        if (useProxyCheckbox.checked) successMsg += ' (via CORS Proxy)';
+        setStatus(successMsg, 'success');
       } catch (error) {
         console.error(error);
-        setStatus(`Failed to fetch data: ${error.message}. <br>If this is a CORS error, you may need a browser extension or a local proxy.`, 'error');
+        let errorMsg = `Failed to fetch data: ${error.message}.`;
+
+        // Suggest proxy if not used
+        if (!useProxyCheckbox.checked && (error.message.includes('Failed to fetch') || error.message.includes('NetworkError'))) {
+          errorMsg += `<br><br><strong>Tip:</strong> Create a CORS error? Try checking the <strong>"Use CORS Proxy"</strong> box above and fetch again.`;
+        }
+
+        setStatus(errorMsg, 'error');
       } finally {
         setLoading(false);
       }
