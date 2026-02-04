@@ -245,9 +245,10 @@
   <div id="status" class="status-bar"></div>
   <div id="results" class="grid"></div>
 
-  <script>
-    const DATA_SOURCE = 'api_results.json';
+  <!-- Load Data Variable -->
+  <script src="api_data.js"></script>
 
+  <script>
     // UI Elements
     const fetchBtn = document.getElementById('fetchBtn');
     const resultsEl = document.getElementById('results');
@@ -262,17 +263,16 @@
     // Helper: Pad numbers
     const pad = n => n.toString().padStart(2, '0');
 
-    // Initialize Reference Date to Local Time (Assume user context is relevant)
+    // Initialize Reference Date to Local Time
     function initDate() {
       const now = new Date();
-      // Format: YYYY-MM-DDThh:mm
       const localIso = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
       refDateInput.value = localIso;
     }
     initDate();
 
     // Event Listeners
-    fetchBtn.addEventListener('click', fetchData);
+    fetchBtn.addEventListener('click', loadData);
 
     // Auto-update render on any filter change
     [onlyActiveCheckbox, next24hCheckbox, refDateInput].forEach(el => {
@@ -281,24 +281,19 @@
       });
     });
 
-    async function fetchData() {
+    function loadData() {
       setLoading(true);
       setStatus('');
       resultsEl.innerHTML = '';
 
-      try {
-        const response = await fetch(DATA_SOURCE);
-        if (!response.ok) {
-          throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
-        }
-        const data = await response.json();
-        rawData = data;
-        render(data);
-        setStatus(`Successfully loaded ${data.competition?.length || 0} competitions from local file.`, 'success');
-      } catch (error) {
-        console.error(error);
-        setStatus(`Failed to load data: ${error.message}. <br>Ensure <code>api_results.json</code> exists in the same directory.`, 'error');
-      } finally {
+      // Use data loaded from script tag
+      if (window.TOURNAMENT_DATA) {
+        rawData = window.TOURNAMENT_DATA;
+        render(rawData);
+        setStatus(`Successfully loaded ${rawData.competition?.length || 0} competitions from local <code>api_data.js</code>.`, 'success');
+        setLoading(false);
+      } else {
+        setStatus(`Failed to find data. <br>Ensure <code>api_data.js</code> exists and is loaded successfully.`, 'error');
         setLoading(false);
       }
     }
@@ -310,10 +305,8 @@
       const showOnlyActive = onlyActiveCheckbox.checked;
       const showNext24h = next24hCheckbox.checked;
 
-      // Compute 24h Window
-      // Ref Date is taken as-is from input (Local context)
       const refDateVal = new Date(refDateInput.value);
-      const windowEnd = new Date(refDateVal.getTime() + 24 * 60 * 60 * 1000); // +24 hours
+      const windowEnd = new Date(refDateVal.getTime() + 24 * 60 * 60 * 1000);
 
       if (competitions.length === 0) {
         resultsEl.innerHTML = '<p>No competitions found.</p>';
@@ -325,60 +318,36 @@
       competitions.forEach((comp) => {
         const calendar = comp.tournamentCalendar || [];
 
-        // Filter Logic
         let filteredCalendar = calendar.filter(t => {
-          // 1. Check Active Status
-          if (showOnlyActive && String(t.active).toLowerCase() !== 'yes') {
-            return false;
-          }
+          if (showOnlyActive && String(t.active).toLowerCase() !== 'yes') return false;
 
-          // 2. Check 24h Window (if enabled)
           if (showNext24h) {
             const startDateStr = t.startDate;
             if (!startDateStr) return false;
 
-            // Parse startDate.
-            // Format usually: "YYYY-MM-DDZ" (UTC midnight) or "YYYY-MM-DD".
-            // We treat "Z" dates as UTC.
             let start = new Date(startDateStr);
-
-            // If parsing fails or yields NaN
             if (isNaN(start.getTime())) {
-              // Try strictly formatting YYYY-MM-DD to UTC midnight
               if (/^\d{4}-\d{2}-\d{2}$/.test(startDateStr)) {
                 start = new Date(`${startDateStr}T00:00:00Z`);
               } else {
-                return false; // Unknown format
+                return false;
               }
             }
 
-            // Logic: "推算24小時後要開打" -> Starts within the next 24h window
-            // Start Date >= Reference Time AND Start Date <= Window End
-            if (start >= refDateVal && start <= windowEnd) {
-              return true;
-            }
-            return false; // Outside window
+            if (start >= refDateVal && start <= windowEnd) return true;
+            return false;
           }
-
           return true;
         });
 
-        // Hide Empty Cards
-        if (filteredCalendar.length === 0) {
-          return;
-        }
+        if (filteredCalendar.length === 0) return;
 
-        // Create Card
         const card = document.createElement('div');
         card.className = 'card';
 
-        // Sort: Active first, then by Start Date
         filteredCalendar.sort((a, b) => {
-          if (showNext24h) {
-            // If filtering by time, date sort is more important
-            return (a.startDate || '').localeCompare(b.startDate || '');
-          }
-          // Otherwise Active logic
+          if (showNext24h) return (a.startDate || '').localeCompare(b.startDate || '');
+
           const aActive = String(a.active).toLowerCase() === 'yes';
           const bActive = String(b.active).toLowerCase() === 'yes';
           if (aActive !== bActive) return bActive ? 1 : -1;
@@ -421,7 +390,6 @@
 
     function formatDate(isoStr) {
       if (!isoStr) return '???';
-      // Just show the YYYY-MM-DD part
       return isoStr.split('T')[0].replace('Z', '');
     }
 
@@ -443,7 +411,7 @@
     }
 
     // Initial fetch
-    fetchData();
+    loadData();
   </script>
 </body>
 
