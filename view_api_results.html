@@ -34,8 +34,37 @@
       border-radius: 8px;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
       display: flex;
+      flex-direction: column;
       gap: 1rem;
-      align-items: center;
+    }
+
+    /* Sub-controls inside the panel */
+    .control-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      align-items: flex-end;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .input-group label {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #475569;
+    }
+
+    input[type="datetime-local"] {
+      padding: 0.6rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 1rem;
+      color: #1e293b;
+      font-family: inherit;
     }
 
     button {
@@ -45,7 +74,7 @@
       padding: 0.6rem 1.2rem;
       font-size: 1rem;
       font-weight: 500;
-      transition: background-color 0.2s;
+      transition: all 0.2s;
     }
 
     button.primary {
@@ -55,15 +84,16 @@
 
     button.primary:hover {
       background: #1d4ed8;
+      box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
     }
 
-    button.secondary {
-      background: #e2e8f0;
-      color: #475569;
-    }
-
-    button.secondary:hover {
-      background: #cbd5e1;
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.95rem;
+      cursor: pointer;
+      user-select: none;
     }
 
     .status-bar {
@@ -101,6 +131,7 @@
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
       display: flex;
       flex-direction: column;
+      transition: transform 0.1s ease-in-out;
     }
 
     .card-header {
@@ -129,7 +160,7 @@
     }
 
     .tournament-item {
-      padding: 0.5rem;
+      padding: 0.6rem;
       background: #f8fafc;
       border-radius: 6px;
       margin-bottom: 0.5rem;
@@ -148,16 +179,16 @@
     }
 
     .t-dates {
-      font-size: 0.8rem;
+      font-size: 0.85rem;
       color: #64748b;
       display: block;
-      margin-top: 2px;
+      margin-top: 4px;
     }
 
     .badge {
       display: inline-block;
-      padding: 0.1rem 0.4rem;
-      border-radius: 4px;
+      padding: 0.15rem 0.5rem;
+      border-radius: 99px;
       font-size: 0.7rem;
       text-transform: uppercase;
       font-weight: bold;
@@ -187,12 +218,28 @@
   </p>
 
   <div class="controls">
-    <button id="fetchBtn" class="primary">🔄 Reload Data</button>
-    <div id="loading" class="hidden" style="color: #64748b; font-style: italic;">Loading...</div>
+    <div class="control-row">
+      <div class="input-group">
+        <label for="refDateInput">Reference Time (Taiwan Time)</label>
+        <input type="datetime-local" id="refDateInput" />
+      </div>
 
-    <label style="margin-left: auto; display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
-      <input type="checkbox" id="onlyActive" checked> Show only active tournaments
-    </label>
+      <div style="padding-bottom: 0.4rem; display: flex; gap: 1.5rem;">
+        <label class="checkbox-label" title="Show tournaments starting within 24h from Reference Time">
+          <input type="checkbox" id="next24h">
+          🕒 Starts within 24h
+        </label>
+
+        <label class="checkbox-label">
+          <input type="checkbox" id="onlyActive" checked>
+          ✅ Show only active
+        </label>
+      </div>
+
+      <button id="fetchBtn" class="primary">🔄 Reload Data</button>
+      <div id="loading" class="hidden" style="color: #64748b; font-style: italic; padding-bottom: 0.5rem;">Loading...
+      </div>
+    </div>
   </div>
 
   <div id="status" class="status-bar"></div>
@@ -201,17 +248,37 @@
   <script>
     const DATA_SOURCE = 'api_results.json';
 
+    // UI Elements
     const fetchBtn = document.getElementById('fetchBtn');
     const resultsEl = document.getElementById('results');
     const statusEl = document.getElementById('status');
     const loadingEl = document.getElementById('loading');
+    const refDateInput = document.getElementById('refDateInput');
     const onlyActiveCheckbox = document.getElementById('onlyActive');
+    const next24hCheckbox = document.getElementById('next24h');
 
     let rawData = null;
 
+    // Helper: Pad numbers
+    const pad = n => n.toString().padStart(2, '0');
+
+    // Initialize Reference Date to Local Time (Assume user context is relevant)
+    function initDate() {
+      const now = new Date();
+      // Format: YYYY-MM-DDThh:mm
+      const localIso = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      refDateInput.value = localIso;
+    }
+    initDate();
+
+    // Event Listeners
     fetchBtn.addEventListener('click', fetchData);
-    onlyActiveCheckbox.addEventListener('change', () => {
-      if (rawData) render(rawData);
+
+    // Auto-update render on any filter change
+    [onlyActiveCheckbox, next24hCheckbox, refDateInput].forEach(el => {
+      el.addEventListener('change', () => {
+        if (rawData) render(rawData);
+      });
     });
 
     async function fetchData() {
@@ -239,7 +306,14 @@
     function render(data) {
       resultsEl.innerHTML = '';
       const competitions = data.competition || [];
+
       const showOnlyActive = onlyActiveCheckbox.checked;
+      const showNext24h = next24hCheckbox.checked;
+
+      // Compute 24h Window
+      // Ref Date is taken as-is from input (Local context)
+      const refDateVal = new Date(refDateInput.value);
+      const windowEnd = new Date(refDateVal.getTime() + 24 * 60 * 60 * 1000); // +24 hours
 
       if (competitions.length === 0) {
         resultsEl.innerHTML = '<p>No competitions found.</p>';
@@ -251,77 +325,111 @@
       competitions.forEach((comp) => {
         const calendar = comp.tournamentCalendar || [];
 
-        // Filter logic
-        let filteredCalendar = calendar;
-        if (showOnlyActive) {
-          filteredCalendar = calendar.filter(t => String(t.active).toLowerCase() === 'yes');
-        }
+        // Filter Logic
+        let filteredCalendar = calendar.filter(t => {
+          // 1. Check Active Status
+          if (showOnlyActive && String(t.active).toLowerCase() !== 'yes') {
+            return false;
+          }
 
-        // If filtering hides all tournaments in this competition, skip the competition card
-        if (filteredCalendar.length === 0 && showOnlyActive) {
+          // 2. Check 24h Window (if enabled)
+          if (showNext24h) {
+            const startDateStr = t.startDate;
+            if (!startDateStr) return false;
+
+            // Parse startDate.
+            // Format usually: "YYYY-MM-DDZ" (UTC midnight) or "YYYY-MM-DD".
+            // We treat "Z" dates as UTC.
+            let start = new Date(startDateStr);
+
+            // If parsing fails or yields NaN
+            if (isNaN(start.getTime())) {
+              // Try strictly formatting YYYY-MM-DD to UTC midnight
+              if (/^\d{4}-\d{2}-\d{2}$/.test(startDateStr)) {
+                start = new Date(`${startDateStr}T00:00:00Z`);
+              } else {
+                return false; // Unknown format
+              }
+            }
+
+            // Logic: "推算24小時後要開打" -> Starts within the next 24h window
+            // Start Date >= Reference Time AND Start Date <= Window End
+            if (start >= refDateVal && start <= windowEnd) {
+              return true;
+            }
+            return false; // Outside window
+          }
+
+          return true;
+        });
+
+        // Hide Empty Cards
+        if (filteredCalendar.length === 0) {
           return;
         }
 
-        // Create card
+        // Create Card
         const card = document.createElement('div');
         card.className = 'card';
 
-        // Sort tournaments: Active first, then by Start Date descending
+        // Sort: Active first, then by Start Date
         filteredCalendar.sort((a, b) => {
+          if (showNext24h) {
+            // If filtering by time, date sort is more important
+            return (a.startDate || '').localeCompare(b.startDate || '');
+          }
+          // Otherwise Active logic
           const aActive = String(a.active).toLowerCase() === 'yes';
           const bActive = String(b.active).toLowerCase() === 'yes';
           if (aActive !== bActive) return bActive ? 1 : -1;
           return (b.startDate || '').localeCompare(a.startDate || '');
         });
 
-        // Build list items
         const listHtml = filteredCalendar.map(t => {
           const isActive = String(t.active).toLowerCase() === 'yes';
           const statusClass = isActive ? 'active' : 'inactive';
           const itemClass = isActive ? 'tournament-item active' : 'tournament-item';
 
           return `
-              <li class="${itemClass}">
-                <span class="badge ${statusClass}">${isActive ? 'ACTIVE' : 'INACTIVE'}</span>
-                <div class="t-name">${t.name}</div>
-                <span class="t-dates">${formatDate(t.startDate)} - ${formatDate(t.endDate)}</span>
-                <div style="font-size: 0.75rem; color: #94a3b8; margin-top:2px;">ID: ${t.id}</div>
-              </li>
-            `;
+            <li class="${itemClass}">
+              <span class="badge ${statusClass}">${isActive ? 'ACTIVE' : 'INACTIVE'}</span>
+              <div class="t-name">${t.name}</div>
+              <span class="t-dates">${formatDate(t.startDate)} - ${formatDate(t.endDate)}</span>
+              <div style="font-size: 0.75rem; color: #94a3b8; margin-top:2px;">ID: ${t.id}</div>
+            </li>
+          `;
         }).join('');
 
         card.innerHTML = `
-            <div class="card-header">
-              <h2>${comp.name}</h2>
-              <div class="meta">${comp.country} (${comp.competitionFormat})</div>
-            </div>
-            <ul class="tournament-list">
-              ${listHtml || '<li style="padding:0.5rem; color:#94a3b8; font-style:italic">No tournaments match filter</li>'}
-            </ul>
-          `;
+          <div class="card-header">
+            <h2>${comp.name}</h2>
+            <div class="meta">${comp.country} (${comp.competitionFormat})</div>
+          </div>
+          <ul class="tournament-list">
+            ${listHtml}
+          </ul>
+        `;
 
         resultsEl.appendChild(card);
         visibleCount++;
       });
 
       if (visibleCount === 0) {
-        resultsEl.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #64748b;">No active tournaments found. Try unchecking "Show only active tournaments".</p>';
+        resultsEl.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #64748b; padding: 2rem;"><h3>No tournaments match your filters.</h3><p>Try unchecking "Start in next 24h" or adjusting the Reference Time.</p></div>';
       }
     }
 
     function formatDate(isoStr) {
       if (!isoStr) return '???';
-      // Clean trailing Z if needed or just parse
+      // Just show the YYYY-MM-DD part
       return isoStr.split('T')[0].replace('Z', '');
     }
 
     function setStatus(msg, type = 'normal') {
       statusEl.textContent = '';
-      statusEl.innerHTML = msg; // Allow HTML for line breaks
+      statusEl.innerHTML = msg;
       statusEl.className = 'status-bar';
-      if (msg) {
-        statusEl.classList.add(type);
-      }
+      if (msg) statusEl.classList.add(type);
     }
 
     function setLoading(isLoading) {
@@ -334,7 +442,7 @@
       }
     }
 
-    // Auto-fetch on load
+    // Initial fetch
     fetchData();
   </script>
 </body>
