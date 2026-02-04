@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Tournament Calendar Viewer</title>
+  <style>
+    :root {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: #1f2933;
+      background: #f8fafc;
+    }
+
+    body {
+      margin: 0 auto;
+      padding: 2rem;
+      max-width: 1200px;
+    }
+
+    h1 {
+      margin-bottom: 0.5rem;
+      color: #0f172a;
+    }
+
+    .description {
+      color: #64748b;
+      margin-bottom: 1.5rem;
+    }
+
+    .controls {
+      margin-bottom: 2rem;
+      padding: 1rem;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    button {
+      cursor: pointer;
+      border-radius: 6px;
+      border: none;
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      font-weight: 500;
+      transition: background-color 0.2s;
+    }
+
+    button.primary {
+      background: #2563eb;
+      color: #fff;
+    }
+
+    button.primary:hover {
+      background: #1d4ed8;
+    }
+
+    button.secondary {
+      background: #e2e8f0;
+      color: #475569;
+    }
+
+    button.secondary:hover {
+      background: #cbd5e1;
+    }
+
+    .status-bar {
+      margin-bottom: 1rem;
+      font-weight: 600;
+      padding: 0.75rem;
+      border-radius: 6px;
+      display: none;
+    }
+
+    .status-bar.error {
+      display: block;
+      background-color: #fee2e2;
+      color: #b91c1c;
+    }
+
+    .status-bar.success {
+      display: block;
+      background-color: #dcfce7;
+      color: #15803d;
+    }
+
+    /* Grid for Competitions */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 1.25rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .card-header {
+      border-bottom: 1px solid #f1f5f9;
+      padding-bottom: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .card-header h2 {
+      margin: 0;
+      font-size: 1.25rem;
+      color: #334155;
+    }
+
+    .meta {
+      font-size: 0.875rem;
+      color: #64748b;
+      margin-top: 0.25rem;
+    }
+
+    .tournament-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      flex-grow: 1;
+    }
+
+    .tournament-item {
+      padding: 0.5rem;
+      background: #f8fafc;
+      border-radius: 6px;
+      margin-bottom: 0.5rem;
+      font-size: 0.95rem;
+      border-left: 3px solid #cbd5e1;
+    }
+
+    .tournament-item.active {
+      background: #eff6ff;
+      border-left-color: #3b82f6;
+    }
+
+    .tournament-item.active .t-name {
+      font-weight: 700;
+      color: #1e40af;
+    }
+
+    .t-dates {
+      font-size: 0.8rem;
+      color: #64748b;
+      display: block;
+      margin-top: 2px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      font-weight: bold;
+      float: right;
+    }
+
+    .badge.active {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .badge.inactive {
+      background: #f1f5f9;
+      color: #94a3b8;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>🏆 Tournament Calendar Explorer</h1>
+  <p class="description">
+    Directly fetches data from the Perform Feeds API to visualize available competitions and tournaments.
+  </p>
+
+  <div class="controls">
+    <button id="fetchBtn" class="primary">🔄 Fetch Data</button>
+    <div id="loading" class="hidden" style="color: #64748b; font-style: italic;">Loading...</div>
+
+    <label style="margin-left: auto; display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
+      <input type="checkbox" id="onlyActive" checked> Show only active tournaments
+    </label>
+  </div>
+
+  <div id="status" class="status-bar"></div>
+  <div id="results" class="grid"></div>
+
+  <script>
+    const API_URL =
+      'https://api.performfeeds.com/soccerdata/tournamentcalendar/1vmmaetzoxkgg1qf6pkpfmku0k?_fmt=json&_rt=b';
+
+    const fetchBtn = document.getElementById('fetchBtn');
+    const resultsEl = document.getElementById('results');
+    const statusEl = document.getElementById('status');
+    const loadingEl = document.getElementById('loading');
+    const onlyActiveCheckbox = document.getElementById('onlyActive');
+
+    let rawData = null;
+
+    fetchBtn.addEventListener('click', fetchData);
+    onlyActiveCheckbox.addEventListener('change', () => {
+      if (rawData) render(rawData);
+    });
+
+    async function fetchData() {
+      setLoading(true);
+      setStatus('');
+      resultsEl.innerHTML = '';
+
+      try {
+        const response = await fetch(API_URL);
+        if (!response.ok) {
+          throw new Error(`HTTP Error: ${response.status}`);
+        }
+        const data = await response.json();
+        rawData = data;
+        render(data);
+        setStatus(`Successfully loaded ${data.competition?.length || 0} competitions.`, 'success');
+      } catch (error) {
+        console.error(error);
+        setStatus(`Failed to fetch data: ${error.message}. <br>If this is a CORS error, you may need a browser extension or a local proxy.`, 'error');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function render(data) {
+      resultsEl.innerHTML = '';
+      const competitions = data.competition || [];
+      const showOnlyActive = onlyActiveCheckbox.checked;
+
+      if (competitions.length === 0) {
+        resultsEl.innerHTML = '<p>No competitions found.</p>';
+        return;
+      }
+
+      let visibleCount = 0;
+
+      competitions.forEach((comp) => {
+        const calendar = comp.tournamentCalendar || [];
+
+        // Filter logic
+        let filteredCalendar = calendar;
+        if (showOnlyActive) {
+          filteredCalendar = calendar.filter(t => String(t.active).toLowerCase() === 'yes');
+        }
+
+        // If filtering hides all tournaments in this competition, skip the competition card
+        if (filteredCalendar.length === 0 && showOnlyActive) {
+          return;
+        }
+
+        // Create card
+        const card = document.createElement('div');
+        card.className = 'card';
+
+        // Sort tournaments: Active first, then by Start Date descending
+        filteredCalendar.sort((a, b) => {
+          const aActive = String(a.active).toLowerCase() === 'yes';
+          const bActive = String(b.active).toLowerCase() === 'yes';
+          if (aActive !== bActive) return bActive ? 1 : -1;
+          return (b.startDate || '').localeCompare(a.startDate || '');
+        });
+
+        // Build list items
+        const listHtml = filteredCalendar.map(t => {
+          const isActive = String(t.active).toLowerCase() === 'yes';
+          const statusClass = isActive ? 'active' : 'inactive';
+          const itemClass = isActive ? 'tournament-item active' : 'tournament-item';
+
+          return `
+              <li class="${itemClass}">
+                <span class="badge ${statusClass}">${isActive ? 'ACTIVE' : 'INACTIVE'}</span>
+                <div class="t-name">${t.name}</div>
+                <span class="t-dates">${formatDate(t.startDate)} - ${formatDate(t.endDate)}</span>
+                <div style="font-size: 0.75rem; color: #94a3b8; margin-top:2px;">ID: ${t.id}</div>
+              </li>
+            `;
+        }).join('');
+
+        card.innerHTML = `
+            <div class="card-header">
+              <h2>${comp.name}</h2>
+              <div class="meta">${comp.country} (${comp.competitionFormat})</div>
+            </div>
+            <ul class="tournament-list">
+              ${listHtml || '<li style="padding:0.5rem; color:#94a3b8; font-style:italic">No tournaments match filter</li>'}
+            </ul>
+          `;
+
+        resultsEl.appendChild(card);
+        visibleCount++;
+      });
+
+      if (visibleCount === 0) {
+        resultsEl.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #64748b;">No active tournaments found. Try unchecking "Show only active tournaments".</p>';
+      }
+    }
+
+    function formatDate(isoStr) {
+      if (!isoStr) return '???';
+      // Clean trailing Z if needed or just parse
+      return isoStr.split('T')[0].replace('Z', '');
+    }
+
+    function setStatus(msg, type = 'normal') {
+      statusEl.textContent = '';
+      statusEl.innerHTML = msg; // Allow HTML for line breaks
+      statusEl.className = 'status-bar';
+      if (msg) {
+        statusEl.classList.add(type);
+      }
+    }
+
+    function setLoading(isLoading) {
+      if (isLoading) {
+        loadingEl.classList.remove('hidden');
+        fetchBtn.disabled = true;
+      } else {
+        loadingEl.classList.add('hidden');
+        fetchBtn.disabled = false;
+      }
+    }
+
+    // Auto-fetch on load
+    fetchData();
+  </script>
+</body>
+
+</html>
